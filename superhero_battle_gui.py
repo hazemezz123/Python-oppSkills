@@ -6,6 +6,14 @@ import threading
 import os
 from PIL import Image, ImageTk  # For working with images
 import datetime  # For timestamping battle records
+import json  # For saving/loading data
+import pickle  # For more complex object serialization
+
+# File paths for saved data
+DATA_DIR = "data"
+HEROES_FILE = os.path.join(DATA_DIR, "heroes.pickle")
+VILLAINS_FILE = os.path.join(DATA_DIR, "villains.pickle") 
+HISTORY_FILE = os.path.join(DATA_DIR, "battle_history.json")
 
 # The base class for our characters
 class Character:
@@ -13,23 +21,33 @@ class Character:
     SuperPerson = []
     Villain = []
     
-    def __new__(cls, name, alignment, power_level):
+    def __new__(cls, name=None, alignment=None, power_level=None):
+        # Skip validation if pickle is unpickling (arguments are None)
+        if name is None and alignment is None and power_level is None:
+            return super().__new__(cls)
+            
         if power_level > 30:
             raise ValueError("Your power is very high")
         else:
             return super().__new__(cls)
     
-    def __init__(self, name, alignment, power_level):
-        Character.increment += 1
-        self.name = name
-        self.alignment = alignment
-        self.power_level = power_level
-        self.health = 100  # New health attribute for more realistic battles
-        
-        if self.alignment == "Evilness":
-            Character.Villain.append(self.name)
-        else:
-            Character.SuperPerson.append(self.name)
+    def __init__(self, name=None, alignment=None, power_level=None):
+        # Only initialize if arguments are provided
+        if name is not None and alignment is not None and power_level is not None:
+            Character.increment += 1
+            self.name = name
+            self.alignment = alignment
+            self.power_level = power_level
+            self.health = 100  # New health attribute for more realistic battles
+            
+            if self.alignment == "Evilness":
+                Character.Villain.append(self.name)
+            else:
+                Character.SuperPerson.append(self.name)
+    
+    # Required to make the class properly picklable
+    def __reduce__(self):
+        return (self.__class__, (self.name, self.alignment, self.power_level))
     
     # Functions to define our character's actions
     def attacking(self, attackPower):
@@ -113,15 +131,39 @@ class Character:
 
 # A class for the Heroes in our story
 class SuperPerson(Character):
-    def __init__(self, name, alignment, power_level):
+    def __init__(self, name=None, alignment=None, power_level=None):
         super().__init__(name, alignment, power_level)
-        self.special_ability = random.choice(["Flight", "Super Strength", "Invisibility", "Mind Control"])
+        # Only set special ability if this is a new character
+        if name is not None and alignment is not None and power_level is not None:
+            self.special_ability = random.choice(["Flight", "Super Strength", "Invisibility", "Mind Control"])
+    
+    # Override __reduce__ to include special_ability
+    def __reduce__(self):
+        state = super().__reduce__()
+        # Add special_ability to the state
+        return (self.__class__, state[1], {'special_ability': self.special_ability})
+    
+    # Handle state restoration
+    def __setstate__(self, state):
+        self.special_ability = state.get('special_ability', "Unknown")
 
 # A class for the villains in our story
 class Villain(Character):
-    def __init__(self, name, alignment, power_level):
+    def __init__(self, name=None, alignment=None, power_level=None):
         super().__init__(name, alignment, power_level)
-        self.evil_plan = random.choice(["World Domination", "Revenge", "Chaos", "Power Stealing"])
+        # Only set evil plan if this is a new character
+        if name is not None and alignment is not None and power_level is not None:
+            self.evil_plan = random.choice(["World Domination", "Revenge", "Chaos", "Power Stealing"])
+    
+    # Override __reduce__ to include evil_plan
+    def __reduce__(self):
+        state = super().__reduce__()
+        # Add evil_plan to the state
+        return (self.__class__, state[1], {'evil_plan': self.evil_plan})
+    
+    # Handle state restoration
+    def __setstate__(self, state):
+        self.evil_plan = state.get('evil_plan', "Unknown")
 
 # GUI Application
 class SuperheroBattleApp:
@@ -158,6 +200,13 @@ class SuperheroBattleApp:
         self.villains = []
         self.battle_history = []  # To store battle records
         
+        # Create data directory if it doesn't exist
+        if not os.path.exists(DATA_DIR):
+            os.makedirs(DATA_DIR)
+        
+        # Load saved data
+        self.load_data()
+        
         # Create main notebook (tabbed interface)
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -181,6 +230,90 @@ class SuperheroBattleApp:
         
         # Create predefined characters
         self.create_predefined_characters()
+        
+        # Bind window close event to save data
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+    
+    def on_closing(self):
+        """Save data and close the application"""
+        self.save_data()
+        self.root.destroy()
+    
+    def load_data(self):
+        """Load saved heroes, villains and battle history"""
+        # Clear existing class variables to avoid duplicates
+        Character.SuperPerson = []
+        Character.Villain = []
+        
+        # Load heroes
+        if os.path.exists(HEROES_FILE):
+            try:
+                with open(HEROES_FILE, 'rb') as f:
+                    self.heroes = pickle.load(f)
+                print(f"Loaded {len(self.heroes)} heroes")
+                
+                # Rebuild the SuperPerson list
+                for hero in self.heroes:
+                    if hero.name not in Character.SuperPerson:
+                        Character.SuperPerson.append(hero.name)
+                        
+            except Exception as e:
+                print(f"Error loading heroes: {e}")
+        
+        # Load villains
+        if os.path.exists(VILLAINS_FILE):
+            try:
+                with open(VILLAINS_FILE, 'rb') as f:
+                    self.villains = pickle.load(f)
+                print(f"Loaded {len(self.villains)} villains")
+                
+                # Rebuild the Villain list
+                for villain in self.villains:
+                    if villain.name not in Character.Villain:
+                        Character.Villain.append(villain.name)
+                        
+            except Exception as e:
+                print(f"Error loading villains: {e}")
+        
+        # Update the increment based on the number of loaded characters
+        Character.increment = len(self.heroes) + len(self.villains)
+        
+        # Load battle history
+        if os.path.exists(HISTORY_FILE):
+            try:
+                with open(HISTORY_FILE, 'r') as f:
+                    self.battle_history = json.load(f)
+                print(f"Loaded {len(self.battle_history)} battle records")
+            except Exception as e:
+                print(f"Error loading battle history: {e}")
+    
+    def save_data(self):
+        """Save heroes, villains and battle history to files"""
+        # Save heroes
+        try:
+            with open(HEROES_FILE, 'wb') as f:
+                # Use the highest available protocol for best compatibility
+                pickle.dump(self.heroes, f, protocol=pickle.HIGHEST_PROTOCOL)
+            print(f"Saved {len(self.heroes)} heroes")
+        except Exception as e:
+            print(f"Error saving heroes: {e}")
+        
+        # Save villains
+        try:
+            with open(VILLAINS_FILE, 'wb') as f:
+                # Use the highest available protocol for best compatibility
+                pickle.dump(self.villains, f, protocol=pickle.HIGHEST_PROTOCOL)
+            print(f"Saved {len(self.villains)} villains")
+        except Exception as e:
+            print(f"Error saving villains: {e}")
+        
+        # Save battle history
+        try:
+            with open(HISTORY_FILE, 'w') as f:
+                json.dump(self.battle_history, f, indent=2)
+            print(f"Saved {len(self.battle_history)} battle records")
+        except Exception as e:
+            print(f"Error saving battle history: {e}")
     
     def setup_create_character_tab(self):
         # Character creation form
@@ -464,6 +597,9 @@ class SuperheroBattleApp:
             # Update lists
             self.update_character_lists()
             
+            # Save data immediately after creating a character
+            self.save_data()
+            
         except ValueError as e:
             messagebox.showerror("Error", str(e))
     
@@ -567,7 +703,7 @@ class SuperheroBattleApp:
         # Count rounds from the battle log
         rounds = battle_log.count("--- Round")
         
-        # Add to battle history
+        # Add to battle history - ensure it's JSON serializable
         battle_record = {
             "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "hero": hero.name,
@@ -581,6 +717,9 @@ class SuperheroBattleApp:
         
         # Update battle history display
         self.update_battle_history()
+        
+        # Save data immediately after battle
+        self.save_data()
         
         # Show final result
         self.root.after(0, lambda: messagebox.showinfo("Battle Result", f"{winner} has won the battle!"))
@@ -634,21 +773,26 @@ class SuperheroBattleApp:
         self.root.after(0, update)
     
     def create_predefined_characters(self):
-        """Create some predefined characters"""
-        # Heroes
-        self.heroes.append(SuperPerson("Batman", "Goodness", 20))
-        self.heroes.append(SuperPerson("Superman", "Goodness", 28))
-        self.heroes.append(SuperPerson("Wonder Woman", "Goodness", 25))
-        self.heroes.append(SuperPerson("Spider-Man", "Goodness", 18))
+        """Create some predefined characters only if no characters are loaded"""
+        # Only add predefined characters if there are no heroes or villains
+        if not self.heroes and not self.villains:
+            # Heroes
+            self.heroes.append(SuperPerson("Batman", "Goodness", 20))
+            self.heroes.append(SuperPerson("Superman", "Goodness", 28))
+            self.heroes.append(SuperPerson("Wonder Woman", "Goodness", 25))
+            self.heroes.append(SuperPerson("Spider-Man", "Goodness", 18))
+            
+            # Villains
+            self.villains.append(Villain("Joker", "Evilness", 15))
+            self.villains.append(Villain("Lex Luthor", "Evilness", 20))
+            self.villains.append(Villain("The Cyborg Superman", "Evilness", 27))
+            self.villains.append(Villain("Green Goblin", "Evilness", 19))
         
-        # Villains
-        self.villains.append(Villain("Joker", "Evilness", 15))
-        self.villains.append(Villain("Lex Luthor", "Evilness", 20))
-        self.villains.append(Villain("The Cyborg Superman", "Evilness", 27))
-        self.villains.append(Villain("Green Goblin", "Evilness", 19))
-        
-        # Update the lists
+        # Always update the lists
         self.update_character_lists()
+        
+        # Also update the battle history display
+        self.update_battle_history()
 
 # Main application
 def main():

@@ -10,6 +10,7 @@ A graphical user interface (GUI) application for simulating battles between supe
 - Health bar visualization during battles
 - Battle log to track the progress of fights
 - Battle history tracking and review of past battles
+- Persistent storage - all characters and battle history are saved automatically
 
 ## Requirements
 
@@ -42,6 +43,7 @@ python superhero_battle_gui.py
 - Select whether it's a hero or villain
 - Set the power level (1-30)
 - Click "Create Character" to add it to your collection
+- All created characters are automatically saved
 
 ### 2. Battle Arena Tab
 
@@ -62,6 +64,17 @@ python superhero_battle_gui.py
 - See date, participants, winner, and number of rounds for each battle
 - Click on any battle to view the detailed battle log
 - Revisit exciting moments from past battles
+- All battle history is automatically saved
+
+## Data Storage
+
+The application automatically saves all your created characters and battle history to the following files:
+
+- `data/heroes.pickle`: Contains all created heroes
+- `data/villains.pickle`: Contains all created villains
+- `data/battle_history.json`: Contains the complete battle history
+
+These files are created automatically in a `data` directory when you close the application or when you create characters or complete battles.
 
 ## Code Enhancements
 
@@ -72,3 +85,4 @@ python superhero_battle_gui.py
 - Interactive health bars to visualize damage during fights
 - Battle history tracking and management
 - Improved text padding and visual styling
+- Data persistence for characters and battle history
